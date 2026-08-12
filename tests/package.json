@@ -1,0 +1,20 @@
+{
+  "name": "url-shortener-acceptance-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Black-box HTTP acceptance suite for the URL shortener (issue #1, Revision 2). Contains no application code and imports no application modules.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

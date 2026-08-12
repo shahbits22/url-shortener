@@ -45,18 +45,44 @@ Against another host or port:
 BASE_URL=http://localhost:8080 npm test
 ```
 
-### Full coverage (all criteria, nothing skipped)
+### Full coverage — the suite must be run TWICE
 
-Two criteria need a hook — without them those tests skip and coverage is incomplete:
+**No single invocation runs all 52 tests, and that is by design.** `SEC-1` asserts that
+the generator seam is *absent* in the default configuration, so it can only run with
+the seam unmounted. `AC-C14` and `AC-C12b` need the seam mounted. The two are mutually
+exclusive; each run skips what the other covers.
+
+| Pass | Service | Suite | Result |
+| --- | --- | --- | --- |
+| 1 — default | `PORT=3000 npm start` | `RESTART_CMD=… npm test` | 50 passed, 2 skipped (`AC-C14`, `AC-C12b`) |
+| 2 — hooked | `ENABLE_TEST_HOOKS=1 PORT=3000 npm start` | `TEST_HOOKS=1 RESTART_CMD=… npm test` | 51 passed, 1 skipped (`SEC-1`) |
+
+Full coverage is the **union**: 52/52 with zero failures. Restart the service between
+passes so the seam is genuinely unmounted in pass 1 — do not just change the suite-side
+variable.
 
 ```bash
-# service, started with the generator hook mounted
-ENABLE_TEST_HOOKS=1 PORT=3000 npm start
-
-# suite
+# ---- pass 1: default configuration (SEC-1 runs here) ----
+rm -rf data .runtime
+PORT=3000 npm start &                       # from the repo root
 cd tests
-TEST_HOOKS=1 RESTART_CMD="<command that restarts the service in place>" npm test
+RESTART_CMD="npm --prefix .. run restart" npm test
+cd .. && npm run stop
+
+# ---- pass 2: generator seam mounted (AC-C14 / AC-C12b run here) ----
+rm -rf data .runtime
+ENABLE_TEST_HOOKS=1 PORT=3000 npm start &
+cd tests
+TEST_HOOKS=1 RESTART_CMD="npm --prefix .. run restart" npm test
+cd .. && npm run stop
 ```
+
+> **Do not run only pass 2.** It looks like the more thorough configuration and it is
+> not. `SEC-1` is the *entire* accepted mitigation for the test-seam attack surface
+> (see the out-of-scope section of the spec): it is what catches a build that leaves
+> `/__test__/*` mounted when `ENABLE_TEST_HOOKS` is unset. Running only the hooked
+> pass silently skips it — the one configuration in which that check is meaningless.
+> `.github/workflows/pr.yml` runs both passes for this reason.
 
 `RESTART_CMD` must:
 
@@ -90,7 +116,10 @@ DELETE /__test__/next-codes -> 204     (clears the queue)
 ```
 
 The hook must be **absent (404) when `ENABLE_TEST_HOOKS` is not set** — `SEC-1`
-asserts this, and it runs in the default configuration.
+asserts this, and it therefore runs **only** in the default configuration (pass 1).
+Note that `SEC-1` probes the `POST` route only; the `DELETE` route's `404` in the
+default configuration is not yet asserted by a test. See the follow-up noted in QA's
+review comment on PR #3.
 
 ## Layout
 

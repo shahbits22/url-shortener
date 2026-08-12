@@ -1,0 +1,82 @@
+name: PR
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  acceptance:
+    name: Build + QA acceptance suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tests/package-lock.json
+
+      - name: Install service dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install test-suite dependencies
+        run: npm ci
+        working-directory: tests
+
+      # Pass 1 — default configuration. The generator seam must NOT be mounted,
+      # so SEC-1 runs here. The hooked tests (AC-C14, AC-C12b) skip in this pass
+      # and are covered by pass 2.
+      - name: Acceptance suite — default configuration
+        run: |
+          set -euo pipefail
+          rm -rf data .runtime
+          npm start > server-default.log 2>&1 &
+          bash ./.github/wait-for-health.sh
+          cd tests
+          RESTART_CMD="npm --prefix .. run restart" npm test
+        env:
+          PORT: '3000'
+          BASE_URL: http://localhost:3000
+
+      - name: Stop service (default configuration)
+        if: always()
+        run: npm run stop || true
+
+      # Pass 2 — generator seam mounted. Covers AC-C14 and AC-C12b. SEC-1 skips
+      # here by design (it asserts the default configuration).
+      - name: Acceptance suite — ENABLE_TEST_HOOKS=1
+        run: |
+          set -euo pipefail
+          rm -rf data .runtime
+          npm start > server-hooks.log 2>&1 &
+          bash ./.github/wait-for-health.sh
+          cd tests
+          TEST_HOOKS=1 RESTART_CMD="npm --prefix .. run restart" npm test
+        env:
+          PORT: '3000'
+          BASE_URL: http://localhost:3000
+          ENABLE_TEST_HOOKS: '1'
+
+      - name: Stop service (hooked configuration)
+        if: always()
+        run: npm run stop || true
+
+      - name: Upload service logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-logs
+          path: |
+            server-default.log
+            server-hooks.log
+            .runtime/server.log
+          if-no-files-found: ignore

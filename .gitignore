@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# url-shortener runtime state
+data/
+.runtime/
+*.db
+*.db-wal
+*.db-shm
